@@ -36,8 +36,15 @@ async def start_handler(message: Message):
     await message.answer(text, reply_markup=keyboard)
 
 async def on_startup():
-    if WEBHOOK_URL:
-        await bot.set_webhook(WEBHOOK_URL)
+    try:
+        if WEBHOOK_URL:
+            print(f"Setting webhook to: {WEBHOOK_URL}")
+            await bot.set_webhook(WEBHOOK_URL)
+            print("Webhook set successfully!")
+        else:
+            print("WARNING: RENDER_EXTERNAL_URL is missing!")
+    except Exception as e:
+        print(f"ERROR during webhook setup: {e}")
 
 def main():
     logging.basicConfig(level=logging.INFO)
