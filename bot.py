@@ -46,7 +46,7 @@ def main():
         bot=bot,
     )
     webhook_requests_handler.register(app, path=WEBHOOK_PATH)
-    setup_application(app, dp, bot)
+    setup_application(app, dp)
     
     web.run_app(app, host="0.0.0.0", port=PORT)
 
