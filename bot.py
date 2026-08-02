@@ -29,7 +29,6 @@ class PostState(StatesGroup):
 async def handle_root(request):
     return web.Response(text="Bot is active and running!")
 
-# Admin Panel Home
 @dp.message(Command("start"))
 async def start_handler(message: Message, state: FSMContext):
     await state.clear()
@@ -39,31 +38,36 @@ async def start_handler(message: Message, state: FSMContext):
     ])
     text = (
         "<b>Bot Admin Panel</b>\n\n"
-        "Click the button below to send your post with original custom emojis instantly!"
+        "Click the button below to send your post with custom emojis to your channel!"
     )
     await message.answer(text, reply_markup=keyboard)
 
-# Trigger posting flow
 @dp.callback_query(F.data == "start_posting")
 async def start_posting_cb(callback: CallbackQuery, state: FSMContext):
     await state.set_state(PostState.waiting_for_post)
     await callback.message.answer(
         "<b>Send your complete post now!</b>\n\n"
-        "Send your photo along with your caption containing custom emojis and formatting all together in one message:"
+        "Send your photo along with your caption containing custom emojis. I am waiting:"
     )
     await callback.answer()
 
-# Receive post and store message reference
+# Receive post and save raw data with entities
 @dp.message(PostState.waiting_for_post)
 async def receive_post(message: Message, state: FSMContext):
     if not message.photo and not message.text:
         await message.reply("❌ Please send a valid photo with caption or text message!")
         return
 
-    # Store message ID and chat ID for native copying
+    photo_id = message.photo[-1].file_id if message.photo else None
+    text_content = message.text or message.caption or ""
+    # Capture custom emoji and markdown entities properly
+    entities = message.entities or message.caption_entities or []
+
     await state.update_data(
-        from_chat_id=message.chat.id,
-        message_id=message.message_id
+        photo_id=photo_id,
+        text_content=text_content,
+        entities=[entity.model_dump() for entity in entities],
+        has_photo=bool(message.photo)
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -72,22 +76,22 @@ async def receive_post(message: Message, state: FSMContext):
     ])
     
     await message.reply(
-        "<b>Post Received Successfully!</b>\n\n"
-        "Click below to broadcast this post to your channel with 100% original custom emojis:",
+        "<b>Post Preview Received!</b>\n\n"
+        "Click below to broadcast this post to your channel:",
         reply_markup=keyboard
     )
 
-# Confirm and Broadcast using Telegram's Native copy_message (No parsing errors!)
 @dp.callback_query(F.data == "confirm_broadcast")
 async def confirm_broadcast_cb(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    from_chat_id = data.get("from_chat_id")
-    message_id = data.get("message_id")
-    
-    if not from_chat_id or not message_id:
-        await callback.answer("Session expired! Please start over with /start.", show_alert=True)
-        return
+    has_photo = data.get("has_photo")
+    photo_id = data.get("photo_id")
+    text_content = data.get("text_content")
+    raw_entities = data.get("entities", [])
 
+    from aiogram.types import MessageEntity
+    entities = [MessageEntity(**ent) for ent in raw_entities]
+    
     channel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➡️ Facebook", url="https://facebook.com")],
         [InlineKeyboardButton(text="➡️ YouTube", url="https://youtube.com")],
@@ -95,20 +99,27 @@ async def confirm_broadcast_cb(callback: CallbackQuery, state: FSMContext):
     ])
 
     try:
-        # Native copy handles custom emojis and formatting perfectly without errors
-        await bot.copy_message(
-            chat_id=CHANNEL_ID,
-            from_chat_id=from_chat_id,
-            message_id=message_id,
-            reply_markup=channel_keyboard
-        )
-        await callback.message.edit_text("✅ Post successfully broadcasted to your channel with original custom emojis and buttons!")
+        if has_photo:
+            await bot.send_photo(
+                chat_id=CHANNEL_ID,
+                photo=photo_id,
+                caption=text_content,
+                caption_entities=entities,
+                reply_markup=channel_keyboard
+            )
+        else:
+            await bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=text_content,
+                entities=entities,
+                reply_markup=channel_keyboard
+            )
+        await callback.message.edit_text("✅ Post successfully broadcasted to your channel with custom emojis and buttons!")
     except Exception as e:
         await callback.message.edit_text(f"❌ Failed to broadcast: {e}")
     
     await state.clear()
 
-# Cancel broadcast
 @dp.callback_query(F.data == "cancel_broadcast")
 async def cancel_broadcast_cb(callback: CallbackQuery, state: FSMContext):
     await state.clear()
