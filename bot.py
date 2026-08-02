@@ -1,5 +1,4 @@
 import os
-import os
 import logging
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
@@ -18,7 +17,7 @@ WEBHOOK_PATH = f"/{TOKEN}"
 RENDER_URL = "https://emoji-bot-msn5.onrender.com"
 WEBHOOK_URL = f"{RENDER_URL}{WEBHOOK_PATH}"
 
-# Your Telegram Channel Username (e.g., @your_channel_username)
+# Your Telegram Channel Username
 CHANNEL_ID = "@FullYonoCode"
 
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -40,7 +39,7 @@ async def start_handler(message: Message, state: FSMContext):
     ])
     text = (
         "<b>Bot Admin Panel</b>\n\n"
-        "Click the button below to send a custom post to your channel, or send any custom emoji to get its ID!"
+        "Click the button below to send a custom post with custom emojis to your channel!"
     )
     await message.answer(text, reply_markup=keyboard)
 
@@ -50,14 +49,23 @@ async def start_posting_cb(callback: CallbackQuery, state: FSMContext):
     await state.set_state(PostState.waiting_for_post)
     await callback.message.answer(
         "<b>Send your post now!</b>\n\n"
-        "You can send text, promo codes, custom emojis, or photos with captions. I am waiting for your content:"
+        "Send your photo with caption, promo codes, and custom emojis. I am waiting:"
     )
     await callback.answer()
 
-# Receive user's custom post content
+# Receive and store exact post content and custom emoji entities
 @dp.message(PostState.waiting_for_post)
 async def receive_post_content(message: Message, state: FSMContext):
-    await state.update_data(user_msg_id=message.message_id, user_chat_id=message.chat.id)
+    photo_id = message.photo[-1].file_id if message.photo else None
+    text_content = message.text or message.caption or ""
+    entities = message.entities or message.caption_entities or []
+    
+    await state.update_data(
+        photo_id=photo_id,
+        text_content=text_content,
+        entities=entities,
+        has_photo=bool(message.photo)
+    )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🚀 Confirm & Broadcast to Channel", callback_data="confirm_broadcast")],
@@ -66,22 +74,23 @@ async def receive_post_content(message: Message, state: FSMContext):
     
     await message.reply(
         "<b>Post Preview Received!</b>\n\n"
-        "Click the button below to publish this exact post to your channel with buttons and custom emojis:",
+        "Click below to publish with your custom emojis and buttons to the channel:",
         reply_markup=keyboard
     )
 
-# Confirm and push to channel
+# Confirm and broadcast preserving custom emojis
 @dp.callback_query(F.data == "confirm_broadcast")
 async def confirm_broadcast_cb(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    msg_id = data.get("user_msg_id")
-    chat_id = data.get("user_chat_id")
+    has_photo = data.get("has_photo")
+    photo_id = data.get("photo_id")
+    text_content = data.get("text_content")
+    entities = data.get("entities")
     
-    if not msg_id:
+    if not text_content and not photo_id:
         await callback.answer("No post found! Please start over with /start.", show_alert=True)
         return
 
-    # Default Inline Buttons attached to the channel post
     channel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➡️ Facebook", url="https://facebook.com")],
         [InlineKeyboardButton(text="➡️ YouTube", url="https://youtube.com")],
@@ -89,13 +98,21 @@ async def confirm_broadcast_cb(callback: CallbackQuery, state: FSMContext):
     ])
 
     try:
-        # Copies user's exact message (text, photos, custom emojis) to the channel
-        await bot.copy_message(
-            chat_id=CHANNEL_ID,
-            from_chat_id=chat_id,
-            message_id=msg_id,
-            reply_markup=channel_keyboard
-        )
+        if has_photo:
+            await bot.send_photo(
+                chat_id=CHANNEL_ID,
+                photo=photo_id,
+                caption=text_content,
+                caption_entities=entities,
+                reply_markup=channel_keyboard
+            )
+        else:
+            await bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=text_content,
+                entities=entities,
+                reply_markup=channel_keyboard
+            )
         await callback.message.edit_text("✅ Post successfully broadcasted to your channel with custom emojis and buttons!")
     except Exception as e:
         await callback.message.edit_text(f"❌ Failed to broadcast: {e}")
@@ -107,14 +124,6 @@ async def confirm_broadcast_cb(callback: CallbackQuery, state: FSMContext):
 async def cancel_broadcast_cb(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text("❌ Broadcast cancelled. Send /start to begin again.")
-
-# Custom Emoji ID detector when not in posting state
-@dp.message(F.text & ~F.state)
-async def get_emoji_id(message: Message):
-    if message.entities:
-        for entity in message.entities:
-            if entity.type == "custom_emoji":
-                await message.reply(f"Custom Emoji ID: {entity.custom_emoji_id}")
 
 async def on_startup():
     if WEBHOOK_URL:
