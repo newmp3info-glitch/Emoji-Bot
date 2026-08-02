@@ -32,7 +32,7 @@ async def start_handler(message: Message):
     
     await message.answer(text, reply_markup=keyboard)
 
-async def on_startup(bot: Bot):
+async def on_startup():
     if WEBHOOK_URL:
         await bot.set_webhook(WEBHOOK_URL)
 
