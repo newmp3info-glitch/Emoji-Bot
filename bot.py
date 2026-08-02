@@ -8,6 +8,9 @@ from aiohttp import web
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 TOKEN = os.getenv("BOT_TOKEN")
+if not TOKEN:
+    raise ValueError("ERROR: BOT_TOKEN Environment Variable is missing in Render!")
+
 PORT = int(os.getenv("PORT", 10000))
 WEBHOOK_PATH = f"/{TOKEN}"
 RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")
