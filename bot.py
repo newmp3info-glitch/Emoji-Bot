@@ -1,6 +1,6 @@
 import os
 import logging
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.client.default import DefaultBotProperties
@@ -14,7 +14,8 @@ WEBHOOK_PATH = f"/{TOKEN}"
 RENDER_URL = "https://emoji-bot-msn5.onrender.com"
 WEBHOOK_URL = f"{RENDER_URL}{WEBHOOK_PATH}"
 
-CHANNEL_ID = "@fullyonocode"
+# Your Telegram Channel Username
+CHANNEL_ID = "@FullYonoCode"
 
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
@@ -24,7 +25,7 @@ async def handle_root(request):
 
 @dp.message(Command("start"))
 async def start_handler(message: Message):
-    await message.answer("Bot is active! Use /post command to broadcast to the channel.")
+    await message.answer("Bot is active! Send any custom emoji to get its ID, or use /post to broadcast.")
 
 @dp.message(Command("post"))
 async def send_post_to_channel(message: Message):
@@ -45,6 +46,14 @@ async def send_post_to_channel(message: Message):
         await message.reply("Post successfully sent to the channel!")
     except Exception as e:
         await message.reply(f"Failed to send post: {e}")
+
+# Automatic Custom Emoji ID Detector
+@dp.message(F.text)
+async def get_emoji_id(message: Message):
+    if message.entities:
+        for entity in message.entities:
+            if entity.type == "custom_emoji":
+                await message.reply(f"Custom Emoji ID: {entity.custom_emoji_id}")
 
 async def on_startup():
     if WEBHOOK_URL:
