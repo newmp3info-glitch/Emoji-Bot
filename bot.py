@@ -30,7 +30,7 @@ class PostState(StatesGroup):
 async def handle_root(request):
     return web.Response(text="Bot is active and running!")
 
-# Automatic Telegram UTF-16 Entity to HTML Converter (Handles Custom Emojis & Formatting)
+# Ultra-Safe Telegram Entity to HTML Converter
 def convert_entities_to_html(text: str, entities: list) -> str:
     if not entities or not text:
         return text
@@ -41,34 +41,39 @@ def convert_entities_to_html(text: str, entities: list) -> str:
         current_bytes = bytearray(utf16_bytes)
         
         for entity in sorted_entities:
-            start = entity.offset * 2
-            length = entity.length * 2
-            end = start + length
-            
-            if start < 0 or end > len(current_bytes):
+            try:
+                start = entity.offset * 2
+                length = entity.length * 2
+                end = start + length
+                
+                if start < 0 or end > len(current_bytes):
+                    continue
+                    
+                entity_bytes = bytes(current_bytes[start:end])
+                content = entity_bytes.decode('utf-16-le', errors='ignore')
+                
+                replacement = content
+                if entity.type == 'custom_emoji':
+                    emoji_id = getattr(entity, 'custom_emoji_id', None)
+                    if emoji_id:
+                        replacement = f"<tg-emoji id='{emoji_id}'>{content}</tg-emoji>"
+                elif entity.type == 'bold':
+                    replacement = f"<b>{content}</b>"
+                elif entity.type == 'italic':
+                    replacement = f"<i>{content}</i>"
+                elif entity.type == 'text_link':
+                    url = getattr(entity, 'url', '')
+                    if url:
+                        replacement = f"<a href='{url}'>{content}</a>"
+                elif entity.type == 'code':
+                    replacement = f"<code>{content}</code>"
+                elif entity.type == 'pre':
+                    replacement = f"<pre>{content}</pre>"
+                    
+                current_bytes[start:end] = replacement.encode('utf-16-le')
+            except Exception:
                 continue
                 
-            entity_bytes = bytes(current_bytes[start:end])
-            content = entity_bytes.decode('utf-16-le', errors='ignore')
-            
-            replacement = content
-            if entity.type == 'custom_emoji':
-                emoji_id = entity.custom_emoji_id
-                replacement = f"<tg-emoji id='{emoji_id}'>{content}</tg-emoji>"
-            elif entity.type == 'bold':
-                replacement = f"<b>{content}</b>"
-            elif entity.type == 'italic':
-                replacement = f"<i>{content}</i>"
-            elif entity.type == 'text_link':
-                url = entity.url
-                replacement = f"<a href='{url}'>{content}</a>"
-            elif entity.type == 'code':
-                replacement = f"<code>{content}</code>"
-            elif entity.type == 'pre':
-                replacement = f"<pre>{content}</pre>"
-                
-            current_bytes[start:end] = replacement.encode('utf-16-le')
-            
         return current_bytes.decode('utf-16-le', errors='ignore')
     except Exception as e:
         print(f"Entity conversion error: {e}")
@@ -114,15 +119,13 @@ async def skip_photo(message: Message, state: FSMContext):
         "<b>Step 2/2:</b> Now send your post text with custom emojis:"
     )
 
-# Step 2: Receive Text and Auto-Convert Custom Emojis
+# Step 2: Receive Text and Safe Convert
 @dp.message(PostState.waiting_for_text)
 async def receive_text(message: Message, state: FSMContext):
     raw_text = message.text or message.caption or ""
     entities = message.entities or message.caption_entities or []
     
-    # Automatically convert native custom emojis into valid HTML tags
     converted_html_text = convert_entities_to_html(raw_text, entities)
-    
     await state.update_data(html_text=converted_html_text)
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
