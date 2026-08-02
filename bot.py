@@ -8,17 +8,14 @@ from aiogram.enums import ParseMode
 from aiohttp import web
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
-# গিটহাবে কোনো টোকেন থাকবে না, এটি রেন্ডার থেকে সুরক্ষিতভাবে রিড করবে
 TOKEN = os.getenv("BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("ERROR: BOT_TOKEN is missing in Render Environment Variables!")
-
 PORT = int(os.getenv("PORT", 10000))
 WEBHOOK_PATH = f"/{TOKEN}"
-
-# রেন্ডারের লাইভ লিংকটি এখানে ফিক্সড করে দেওয়া হলো যাতে ওয়েবহুক মিস না হয়
 RENDER_URL = "https://emoji-bot-msn5.onrender.com"
 WEBHOOK_URL = f"{RENDER_URL}{WEBHOOK_PATH}"
+
+# আপনার টেলিগ্রাম চ্যানেლის ইউজারনেম এখানে বসাবেন (যেমন: @your_channel_username)
+CHANNEL_ID = "@FullYonoCode"
 
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
@@ -26,21 +23,33 @@ dp = Dispatcher()
 async def handle_root(request):
     return web.Response(text="Bot is active and running!")
 
+# প্রাইভেট ইনবক্সে /start দিলে কাজের জন্য
 @dp.message(Command("start"))
 async def start_handler(message: Message):
+    await message.answer("বট সক্রিয় আছে! চ্যানেলে পোস্ট পাঠাতে /post কমান্ড ব্যবহার করুন।")
+
+# চ্যানেলে অ্যানিমেটেড ইমোজি ও বাটনসহ পোস্ট পাঠানোর কমান্ড
+@dp.message(Command("post"))
+async def send_post_to_channel(message: Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➡️ Facebook", url="https://facebook.com")],
         [InlineKeyboardButton(text="➡️ YouTube", url="https://youtube.com")],
         [InlineKeyboardButton(text="➡️ Download", url="https://t.me/yourlink")]
     ])
     
+    # এখানে আপনার প্রিমিয়াম অ্যানিমেটেড ইমোজি ট্যাগ (<tg-emoji>) ব্যবহার করা হয়েছে
     text = (
         "<b>Game Rummy ➡️ New Promo Code Fast Claim Now!!</b>\n\n"
-        "🎁 <b>PROMO CODE</b> ➡️ gamerummy.net\n"
+        "<tg-emoji id='5368324170671202286'>🎁</tg-emoji> <b>PROMO CODE</b> ➡️ gamerummy.net\n"
         "🔥 <b>JOIN THIS CHANNEL</b> for regular updates!"
     )
     
-    await message.answer(text, reply_markup=keyboard)
+    try:
+        # সরাসরি চ্যানেলে মেসেজ পাঠিয়ে দিবে
+        await bot.send_message(chat_id=CHANNEL_ID, text=text, reply_markup=keyboard)
+        await message.reply("সফলভাবে চ্যানেলে পোস্ট পাঠিয়ে দেওয়া হয়েছে!")
+    except Exception as e:
+        await message.reply(f"পোস্ট পাঠাতে সমস্যা হয়েছে: {e}")
 
 async def on_startup():
     if WEBHOOK_URL:
