@@ -18,63 +18,81 @@ RENDER_URL = "https://emoji-bot-msn5.onrender.com"
 WEBHOOK_URL = f"{RENDER_URL}{WEBHOOK_PATH}"
 
 # Your Telegram Channel Username
-CHANNEL_ID = "@fullyonocode"
+CHANNEL_ID = "@FullYonoCode"
 
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
 
 class PostState(StatesGroup):
-    waiting_for_text = State()
+    waiting_for_post = State()
 
 async def handle_root(request):
     return web.Response(text="Bot is active and running!")
 
+# Admin Panel Home
 @dp.message(Command("start"))
 async def start_handler(message: Message, state: FSMContext):
     await state.clear()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✍️ Create New Channel Post", callback_data="start_post")],
+        [InlineKeyboardButton(text="✍️ Create & Send New Post", callback_data="start_posting")],
         [InlineKeyboardButton(text="➡️ Open Channel", url=f"https://t.me/{CHANNEL_ID.replace('@', '')}")]
     ])
     text = (
         "<b>Bot Admin Panel</b>\n\n"
-        "Click the button below to type your message with custom emojis and broadcast it directly to your channel!"
+        "Click the button below to send your post with custom emojis and photos to your channel!"
     )
     await message.answer(text, reply_markup=keyboard)
 
-@dp.callback_query(F.data == "start_post")
-async def start_post_cb(callback: CallbackQuery, state: FSMContext):
-    await state.set_state(PostState.waiting_for_text)
+# Trigger posting flow
+@dp.callback_query(F.data == "start_posting")
+async def start_posting_cb(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(PostState.waiting_for_post)
     await callback.message.answer(
-        "<b>Type your text now!</b>\n\n"
-        "You can use HTML tags and custom emojis like this:\n"
-        "<code>&lt;tg-emoji id='6291753830212182163'&gt;💰&lt;/tg-emoji&gt;</code>\n\n"
-        "Send your text message:"
+        "<b>Send your post now!</b>\n\n"
+        "You can send a photo with caption or just text containing your custom emojis and promo codes. I am waiting:"
     )
     await callback.answer()
 
-@dp.message(PostState.waiting_for_text)
-async def receive_text_content(message: Message, state: FSMContext):
-    await state.update_data(post_text=message.text)
+# Receive and store photo, text, and custom emoji entities properly
+@dp.message(PostState.waiting_for_post)
+async def receive_post_content(message: Message, state: FSMContext):
+    photo_id = message.photo[-1].file_id if message.photo else None
+    text_content = message.text or message.caption or ""
+    entities = message.entities or message.caption_entities or []
+    
+    if not text_content and not photo_id:
+        await message.reply("❌ Please send a valid photo or text message!")
+        return
+
+    await state.update_data(
+        photo_id=photo_id,
+        text_content=text_content,
+        entities=entities,
+        has_photo=bool(message.photo)
+    )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🚀 Confirm & Broadcast to Channel", callback_data="send_to_channel")],
-        [InlineKeyboardButton(text="❌ Cancel", callback_data="cancel_post")]
+        [InlineKeyboardButton(text="🚀 Confirm & Broadcast to Channel", callback_data="confirm_broadcast")],
+        [InlineKeyboardButton(text="❌ Cancel", callback_data="cancel_broadcast")]
     ])
     
     await message.reply(
-        "<b>Preview Saved!</b>\n\n"
-        "Click below to send this post directly to your channel with custom emojis and buttons:",
+        "<b>Post Preview Received Successfully!</b>\n\n"
+        "Click below to publish this post directly to your channel with custom emojis and buttons:",
         reply_markup=keyboard
     )
 
-@dp.callback_query(F.data == "send_to_channel")
-async def send_to_channel_cb(callback: CallbackQuery, state: FSMContext):
+# Confirm and broadcast preserving custom emojis and photos
+@dp.callback_query(F.data == "confirm_broadcast")
+async def confirm_broadcast_cb(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    post_text = data.get("post_text")
+    has_photo = data.get("has_photo")
+    photo_id = data.get("photo_id")
+    text_content = data.get("text_content")
+    entities = data.get("entities")
     
-    if not post_text:
-        await callback.answer("No text found! Start over with /start.", show_alert=True)
+    if not text_content and not photo_id:
+        await callback.answer("No content found! Please start over with /start.", show_alert=True)
         return
 
     channel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -84,21 +102,32 @@ async def send_to_channel_cb(callback: CallbackQuery, state: FSMContext):
     ])
 
     try:
-        await bot.send_message(
-            chat_id=CHANNEL_ID,
-            text=post_text,
-            reply_markup=channel_keyboard
-        )
+        if has_photo:
+            await bot.send_photo(
+                chat_id=CHANNEL_ID,
+                photo=photo_id,
+                caption=text_content,
+                caption_entities=entities,
+                reply_markup=channel_keyboard
+            )
+        else:
+            await bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=text_content,
+                entities=entities,
+                reply_markup=channel_keyboard
+            )
         await callback.message.edit_text("✅ Post successfully broadcasted to your channel with custom emojis and buttons!")
     except Exception as e:
         await callback.message.edit_text(f"❌ Failed to broadcast: {e}")
     
     await state.clear()
 
-@dp.callback_query(F.data == "cancel_post")
-async def cancel_post_cb(callback: CallbackQuery, state: FSMContext):
+# Cancel broadcast
+@dp.callback_query(F.data == "cancel_broadcast")
+async def cancel_broadcast_cb(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text("❌ Cancelled. Send /start to begin again.")
+    await callback.message.edit_text("❌ Broadcast cancelled. Send /start to begin again.")
 
 async def on_startup():
     if WEBHOOK_URL:
