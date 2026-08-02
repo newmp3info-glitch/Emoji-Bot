@@ -8,13 +8,12 @@ from aiohttp import web
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 TOKEN = os.getenv("BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("ERROR: BOT_TOKEN Environment Variable is missing in Render!")
-
 PORT = int(os.getenv("PORT", 10000))
 WEBHOOK_PATH = f"/{TOKEN}"
-RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")
-WEBHOOK_URL = f"{RENDER_URL}{WEBHOOK_PATH}" if RENDER_URL else None
+
+# সরাসরি আপনার রেন্ডারের লাইভ লিংকটি এখানে বসিয়ে দেওয়া হলো
+RENDER_URL = "https://emoji-bot-msn5.onrender.com"
+WEBHOOK_URL = f"{RENDER_URL}{WEBHOOK_PATH}"
 
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
@@ -36,15 +35,9 @@ async def start_handler(message: Message):
     await message.answer(text, reply_markup=keyboard)
 
 async def on_startup():
-    try:
-        if WEBHOOK_URL:
-            print(f"Setting webhook to: {WEBHOOK_URL}")
-            await bot.set_webhook(WEBHOOK_URL)
-            print("Webhook set successfully!")
-        else:
-            print("WARNING: RENDER_EXTERNAL_URL is missing!")
-    except Exception as e:
-        print(f"ERROR during webhook setup: {e}")
+    if WEBHOOK_URL:
+        await bot.set_webhook(WEBHOOK_URL)
+        print(f"Webhook successfully set to: {WEBHOOK_URL}")
 
 def main():
     logging.basicConfig(level=logging.INFO)
